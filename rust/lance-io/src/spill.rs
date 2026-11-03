@@ -217,7 +217,7 @@ fn create_temp_dir() -> Result<tempfile::TempDir> {
     const ATTEMPTS: u32 = 5;
     let mut attempt = 0;
     loop {
-        match tempfile::tempdir() {
+        match lance_core::utils::tempfile::scratch_tempdir() {
             Ok(dir) => return Ok(dir),
             Err(err) if err.kind() == io::ErrorKind::PermissionDenied && attempt + 1 < ATTEMPTS => {
                 attempt += 1;

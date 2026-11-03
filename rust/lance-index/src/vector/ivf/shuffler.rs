@@ -57,7 +57,7 @@ const SHUFFLE_BATCH_SIZE: usize = 1024;
 
 /// Returns the temp dir path plus a guard whose `Drop` removes the directory.
 fn get_temp_dir() -> Result<(Path, tempfile::TempDir)> {
-    let dir = tempfile::TempDir::new()?;
+    let dir = lance_core::utils::tempfile::scratch_tempdir()?;
     let tmp_dir_path =
         Path::from_filesystem_path(dir.path()).map_err(|e| Error::io_source(Box::new(e)))?;
     Ok((tmp_dir_path, dir))

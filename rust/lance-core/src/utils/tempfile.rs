@@ -18,10 +18,48 @@ use object_store::path::Path as ObjPath;
 use std::{
     ops::Deref,
     path::{Path as StdPath, PathBuf},
+    sync::OnceLock,
 };
 use tempfile::NamedTempFile;
 
 use crate::Result;
+
+static SCRATCH_ROOT: OnceLock<PathBuf> = OnceLock::new();
+
+/// Pin the directory under which Lance creates every internal scratch file
+/// (index-build shuffles, spill stores, sort spills, DataFusion spill files).
+///
+/// This is the single seam for scratch placement. Without it Lance uses the
+/// platform temp dir. Call once, before the first index build or spilling
+/// query; a later call returns the rejected path. The directory must exist and
+/// is owned by the caller (permissions, volume, encryption); Lance only creates
+/// uniquely named children and removes them when done. No environment
+/// variable is read.
+// ponytail: process-wide set-once; per-session roots would need threading a path through every builder.
+pub fn set_scratch_root(root: impl Into<PathBuf>) -> std::result::Result<(), PathBuf> {
+    SCRATCH_ROOT.set(root.into())
+}
+
+/// The root set by [`set_scratch_root`], if any.
+pub fn scratch_root() -> Option<PathBuf> {
+    SCRATCH_ROOT.get().cloned()
+}
+
+/// A fresh temporary directory under [`scratch_root`] (platform temp dir if unset).
+pub fn scratch_tempdir() -> std::io::Result<tempfile::TempDir> {
+    match SCRATCH_ROOT.get() {
+        Some(root) => tempfile::tempdir_in(root),
+        None => tempfile::tempdir(),
+    }
+}
+
+/// A fresh temporary file under [`scratch_root`] (platform temp dir if unset).
+pub fn scratch_tempfile() -> std::io::Result<NamedTempFile> {
+    match SCRATCH_ROOT.get() {
+        Some(root) => NamedTempFile::new_in(root),
+        None => NamedTempFile::new(),
+    }
+}
 
 /// A temporary directory
 ///
@@ -39,7 +77,7 @@ pub struct TempDir {
 
 impl TempDir {
     fn new() -> Self {
-        let tempdir = tempfile::tempdir().unwrap();
+        let tempdir = scratch_tempdir().unwrap();
         Self { tempdir }
     }
 
@@ -49,7 +87,7 @@ impl TempDir {
     /// However, when we use this type in production code, we may want to return
     /// errors gracefully instead of panicking.
     pub fn try_new() -> Result<Self> {
-        let tempdir = tempfile::tempdir()?;
+        let tempdir = scratch_tempdir()?;
         Ok(Self { tempdir })
     }
 
@@ -208,7 +246,7 @@ pub struct TempFile {
 
 impl TempFile {
     fn new() -> Self {
-        let temppath = tempfile::NamedTempFile::new().unwrap();
+        let temppath = scratch_tempfile().unwrap();
         Self { temppath }
     }
 

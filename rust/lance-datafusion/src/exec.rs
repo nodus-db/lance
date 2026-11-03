@@ -21,7 +21,7 @@ use datafusion::{
     execution::{
         TaskContext,
         context::{SessionConfig, SessionContext},
-        disk_manager::DiskManagerBuilder,
+        disk_manager::{DiskManagerBuilder, DiskManagerMode},
         memory_pool::FairSpillPool,
         runtime_env::RuntimeEnvBuilder,
     },
@@ -385,8 +385,12 @@ pub fn new_session_context(options: &LanceExecutionOptions) -> SessionContext {
             (options.mem_pool_size() / 3).min(MAX_SORT_SPILL_RESERVATION_BYTES) as usize;
         session_config =
             session_config.with_sort_spill_reservation_bytes(sort_spill_reservation_bytes);
-        let disk_manager_builder = DiskManagerBuilder::default()
+        let mut disk_manager_builder = DiskManagerBuilder::default()
             .with_max_temp_directory_size(options.max_temp_directory_size());
+        if let Some(root) = lance_core::utils::tempfile::scratch_root() {
+            disk_manager_builder =
+                disk_manager_builder.with_mode(DiskManagerMode::Directories(vec![root]));
+        }
         runtime_env_builder = runtime_env_builder
             .with_disk_manager_builder(disk_manager_builder)
             .with_memory_pool(Arc::new(TrackConsumersPool::new(

@@ -705,7 +705,7 @@ pub async fn merge_rtree_indices(
     ));
     let tmpdir = Arc::new(TempDir::default());
     let spill_store = Arc::new(LanceIndexStore::new(
-        Arc::new(ObjectStore::local()),
+        Arc::new(ObjectStore::scratch()),
         tmpdir.obj_path(),
         Arc::new(LanceCache::no_cache()),
     ));
@@ -867,7 +867,7 @@ impl ScalarIndex for RTreeIndex {
         ));
         let tmpdir = Arc::new(TempDir::default());
         let spill_store = Arc::new(LanceIndexStore::new(
-            Arc::new(ObjectStore::local()),
+            Arc::new(ObjectStore::scratch()),
             tmpdir.obj_path(),
             Arc::new(LanceCache::no_cache()),
         ));
@@ -1253,7 +1253,7 @@ impl BasicTrainer for RTreeIndexPlugin {
         let bbox_data = Self::convert_bbox_stream(data)?;
         let tmpdir = Arc::new(TempDir::default());
         let spill_store = Arc::new(LanceIndexStore::new(
-            Arc::new(ObjectStore::local()),
+            Arc::new(ObjectStore::scratch()),
             tmpdir.obj_path(),
             Arc::new(LanceCache::no_cache()),
         ));

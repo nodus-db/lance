@@ -1061,7 +1061,7 @@ impl<S: IvfSubIndex + 'static, Q: Quantization + 'static> IvfIndexBuilder<S, Q> 
             None => {
                 log::info!("no data to shuffle");
                 Arc::new(IvfShufflerReader::new(
-                    Arc::new(self.store.clone()),
+                    Arc::new(ObjectStore::scratch()),
                     self.temp_dir.clone(),
                     vec![0; ivf.num_partitions()],
                     0.0,
@@ -2468,7 +2468,7 @@ impl PartitionAdjuster<'_> {
             None => {
                 log::info!("no vectors to reshuffle");
                 let empty_reader: Box<dyn ShuffleReader> = Box::new(IvfShufflerReader::new(
-                    Arc::new(self.store.clone()),
+                    Arc::new(ObjectStore::scratch()),
                     self.temp_dir.clone().join("split_shuffle"),
                     vec![0; new_centroids.len()],
                     0.0,
@@ -2825,7 +2825,7 @@ impl PartitionAdjuster<'_> {
             self.format_version,
             None,
         );
-        let store = Arc::new(self.store.clone());
+        let store = Arc::new(ObjectStore::scratch());
         let (mut sender, mut receiver) = futures::channel::mpsc::channel::<RecordBatch>(2);
         let shuffle = async move {
             let Some(first) = receiver.next().await else {

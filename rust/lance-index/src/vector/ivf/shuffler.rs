@@ -491,7 +491,7 @@ impl IvfShuffler {
         &mut self,
         data: impl Stream<Item = Result<RecordBatch>>,
     ) -> Result<()> {
-        let object_store = ObjectStore::local();
+        let object_store = ObjectStore::scratch();
         let path = self.output_dir.clone().join(UNSORTED_BUFFER);
         let writer = object_store.create(&path).await?;
 
@@ -544,7 +544,7 @@ impl IvfShuffler {
     async fn total_batches(&self) -> Result<Vec<usize>> {
         let mut total_batches = vec![];
         for buffer in &self.unsorted_buffers {
-            let object_store = ObjectStore::local();
+            let object_store = ObjectStore::scratch();
             let path = self.output_dir.clone().join(buffer.as_str());
 
             if self.is_legacy {
@@ -580,7 +580,7 @@ impl IvfShuffler {
     }
 
     async fn count_partition_size(&self, inputs: &[ShuffleInput]) -> Result<Vec<u64>> {
-        let object_store = ObjectStore::local();
+        let object_store = ObjectStore::scratch();
         let mut partition_sizes = vec![0; self.num_partitions as usize];
         let scheduler = ScanScheduler::new(
             Arc::new(object_store.clone()),
@@ -669,7 +669,7 @@ impl IvfShuffler {
             end,
         } in inputs
         {
-            let object_store = ObjectStore::local();
+            let object_store = ObjectStore::scratch();
             let file_name = &self.unsorted_buffers[file_idx];
             let path = self.output_dir.clone().join(file_name.as_str());
             let mut _reader_handle = None;
@@ -807,7 +807,7 @@ impl IvfShuffler {
                         .await?;
 
                     // finally, write the shuffled data to disk
-                    let object_store = ObjectStore::local();
+                    let object_store = ObjectStore::scratch();
                     let output_file = format!("{}_{}.lance", this.shuffle_output_root_filename, i);
                     let path = this.output_dir.clone().join(output_file.clone());
                     let writer = object_store.create(&path).await?;
@@ -861,7 +861,7 @@ impl IvfShuffler {
         let mut streams = vec![];
 
         for file in files {
-            let object_store = Arc::new(ObjectStore::local());
+            let object_store = Arc::new(ObjectStore::scratch());
             let path = basedir.clone().join(file);
             let scheduler_config = SchedulerConfig::max_bandwidth(&object_store);
             let scan_scheduler = ScanScheduler::new(object_store, scheduler_config);

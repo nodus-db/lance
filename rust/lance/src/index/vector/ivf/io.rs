@@ -345,7 +345,7 @@ pub(super) async fn write_hnsw_quantization_index_partitions(
         }
     }
 
-    let object_store = ObjectStore::local();
+    let object_store = ObjectStore::scratch();
     // Partitions are staged in this scratch dir, then merged into the final index.
     // Share the guard with every task via `Arc` so its `Drop` removes the dir only
     // after the last task finishes -- never while one is still writing.

@@ -45,6 +45,122 @@ pub fn scratch_root() -> Option<PathBuf> {
     SCRATCH_ROOT.get().cloned()
 }
 
+/// Streaming file IO for scratch sites that use `std::fs` rather than a lance
+/// `ObjectStore` (MinHash-LSH spill runs, DataFusion replay spill).
+///
+/// Install with [`set_scratch_provider`]. Contract for implementors:
+/// * `create` makes (or truncates) the file at `path`; bytes arrive through
+///   `Write` in order; `flush` must make everything written so far readable by a
+///   concurrent `open` (the DataFusion spill reads while it is still written);
+///   `finish` seals the file.
+/// * `open` gives random-access reads over the logical (plaintext) bytes, and
+///   `len` is the logical length at call time.
+/// * Files stay ordinary files at `path`; the scratch dir is still removed with
+///   `std::fs`, so no sidecar outside `path`'s directory.
+pub trait ScratchIo: Send + Sync + std::fmt::Debug {
+    fn create(&self, path: &StdPath) -> std::io::Result<Box<dyn ScratchWrite>>;
+    fn open(&self, path: &StdPath) -> std::io::Result<Box<dyn ScratchRead>>;
+}
+
+/// Write half of [`ScratchIo`].
+pub trait ScratchWrite: std::io::Write + Send {
+    /// Seal the file; no further writes.
+    fn finish(&mut self) -> std::io::Result<()>;
+}
+
+/// Read half of [`ScratchIo`]; positional, so `&self`.
+pub trait ScratchRead: Send + Sync {
+    /// Logical length in bytes.
+    fn len(&self) -> std::io::Result<u64>;
+    fn is_empty(&self) -> std::io::Result<bool> {
+        Ok(self.len()? == 0)
+    }
+    /// Fill `buf` from `offset`, or fail with `UnexpectedEof`.
+    fn read_exact_at(&self, offset: u64, buf: &mut [u8]) -> std::io::Result<()>;
+}
+
+static SCRATCH_PROVIDER: OnceLock<std::sync::Arc<dyn ScratchIo>> = OnceLock::new();
+
+/// Install the [`ScratchIo`] used by [`scratch_create`] / [`scratch_open`]. Set once.
+pub fn set_scratch_provider(
+    provider: std::sync::Arc<dyn ScratchIo>,
+) -> std::result::Result<(), std::sync::Arc<dyn ScratchIo>> {
+    SCRATCH_PROVIDER.set(provider)
+}
+
+struct StdScratchWrite(std::fs::File);
+
+impl std::io::Write for StdScratchWrite {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.write(buf)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.0.flush()
+    }
+}
+
+impl ScratchWrite for StdScratchWrite {
+    fn finish(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+struct StdScratchRead(std::sync::Mutex<std::fs::File>);
+
+impl ScratchRead for StdScratchRead {
+    fn len(&self) -> std::io::Result<u64> {
+        Ok(self.0.lock().unwrap().metadata()?.len())
+    }
+    fn read_exact_at(&self, offset: u64, buf: &mut [u8]) -> std::io::Result<()> {
+        use std::io::{Read, Seek, SeekFrom};
+        let mut file = self.0.lock().unwrap();
+        file.seek(SeekFrom::Start(offset))?;
+        file.read_exact(buf)
+    }
+}
+
+/// Create (or truncate) a scratch file through the provider, else a plain file.
+pub fn scratch_create(path: &StdPath) -> std::io::Result<Box<dyn ScratchWrite>> {
+    match SCRATCH_PROVIDER.get() {
+        Some(provider) => provider.create(path),
+        None => Ok(Box::new(StdScratchWrite(std::fs::File::create(path)?))),
+    }
+}
+
+/// Open a scratch file for positional reads through the provider, else a plain file.
+pub fn scratch_open(path: &StdPath) -> std::io::Result<Box<dyn ScratchRead>> {
+    match SCRATCH_PROVIDER.get() {
+        Some(provider) => provider.open(path),
+        None => Ok(Box::new(StdScratchRead(std::sync::Mutex::new(
+            std::fs::File::open(path)?,
+        )))),
+    }
+}
+
+/// Sequential [`std::io::Read`] over a [`ScratchRead`].
+pub struct ScratchReader {
+    inner: Box<dyn ScratchRead>,
+    pos: u64,
+}
+
+impl ScratchReader {
+    pub fn open(path: &StdPath) -> std::io::Result<Self> {
+        Ok(Self {
+            inner: scratch_open(path)?,
+            pos: 0,
+        })
+    }
+}
+
+impl std::io::Read for ScratchReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = (self.inner.len()?.saturating_sub(self.pos)).min(buf.len() as u64) as usize;
+        self.inner.read_exact_at(self.pos, &mut buf[..n])?;
+        self.pos += n as u64;
+        Ok(n)
+    }
+}
+
 /// A fresh temporary directory under [`scratch_root`] (platform temp dir if unset).
 pub fn scratch_tempdir() -> std::io::Result<tempfile::TempDir> {
     match SCRATCH_ROOT.get() {

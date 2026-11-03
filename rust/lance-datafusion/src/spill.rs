@@ -19,7 +19,7 @@ use datafusion_common::DataFusionError;
 use futures::StreamExt;
 use lance_arrow::memory::MemoryAccumulator;
 use lance_core::error::LanceOptionExt;
-use lance_core::utils::tempfile::TempDir;
+use lance_core::utils::tempfile::{ScratchReader, ScratchWrite, TempDir, scratch_create};
 
 /// Start a spill of Arrow data to a file that can be read later multiple times.
 ///
@@ -598,14 +598,16 @@ impl SpillSender {
 
 /// An async wrapper around [`StreamWriter`]. Each call uses [`tokio::task::spawn_blocking`]
 /// to spawn a blocking task to write the batch.
+type ScratchStreamWriter = StreamWriter<BufWriter<Box<dyn ScratchWrite>>>;
+
 struct AsyncStreamWriter {
-    writer: Arc<Mutex<StreamWriter<BufWriter<std::fs::File>>>>,
+    writer: Arc<Mutex<ScratchStreamWriter>>,
 }
 
 impl AsyncStreamWriter {
     pub async fn open(path: PathBuf, schema: Arc<Schema>) -> Result<Self, ArrowError> {
         let writer = tokio::task::spawn_blocking(move || {
-            let file = std::fs::File::create(&path).map_err(ArrowError::from)?;
+            let file = scratch_create(&path).map_err(ArrowError::from)?;
             let writer = BufWriter::new(file);
             StreamWriter::try_new(writer, &schema)
         })
@@ -630,7 +632,13 @@ impl AsyncStreamWriter {
         let writer = self.writer.clone();
         tokio::task::spawn_blocking(move || {
             let mut writer = writer.lock().unwrap();
-            writer.finish()
+            writer.finish()?;
+            writer.flush()?;
+            writer
+                .get_mut()
+                .get_mut()
+                .finish()
+                .map_err(ArrowError::from)
         })
         .await
         .unwrap()
@@ -638,13 +646,13 @@ impl AsyncStreamWriter {
 }
 
 struct AsyncStreamReader {
-    reader: Arc<Mutex<StreamReader<BufReader<std::fs::File>>>>,
+    reader: Arc<Mutex<StreamReader<BufReader<ScratchReader>>>>,
 }
 
 impl AsyncStreamReader {
     pub async fn open(path: PathBuf) -> Result<Self, ArrowError> {
         let reader = tokio::task::spawn_blocking(move || {
-            let file = std::fs::File::open(&path).map_err(ArrowError::from)?;
+            let file = ScratchReader::open(&path).map_err(ArrowError::from)?;
             let reader = BufReader::new(file);
             StreamReader::try_new(reader, None)
         })

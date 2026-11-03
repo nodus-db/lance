@@ -17,7 +17,7 @@ use datafusion_common::{DataFusionError, Statistics, utils::get_available_parall
 use datafusion_execution::{
     TaskContext,
     config::SessionConfig,
-    disk_manager::DiskManagerBuilder,
+    disk_manager::{DiskManagerBuilder, DiskManagerMode},
     memory_pool::{FairSpillPool, TrackConsumersPool},
     runtime_env::{RuntimeEnv, RuntimeEnvBuilder},
 };
@@ -354,8 +354,12 @@ pub fn new_session_config(options: &LanceExecutionOptions) -> SessionConfig {
 pub fn new_runtime_env(options: &LanceExecutionOptions) -> Arc<RuntimeEnv> {
     let mut runtime_env_builder = RuntimeEnvBuilder::new();
     if options.use_spilling() {
-        let disk_manager_builder = DiskManagerBuilder::default()
+        let mut disk_manager_builder = DiskManagerBuilder::default()
             .with_max_temp_directory_size(options.max_temp_directory_size());
+        if let Some(root) = lance_core::utils::tempfile::scratch_root() {
+            disk_manager_builder =
+                disk_manager_builder.with_mode(DiskManagerMode::Directories(vec![root]));
+        }
         runtime_env_builder = runtime_env_builder
             .with_disk_manager_builder(disk_manager_builder)
             .with_memory_pool(Arc::new(TrackConsumersPool::new(

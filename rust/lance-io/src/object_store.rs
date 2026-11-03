@@ -10,7 +10,7 @@ use std::ops::Range;
 use std::os::unix::fs::PermissionsExt;
 use std::pin::Pin;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use ::tracing::{Span, field::Empty, instrument};
@@ -505,6 +505,25 @@ impl PartialEq for ObjectStoreParams {
     }
 }
 
+static SCRATCH_STORE: OnceLock<Arc<ObjectStore>> = OnceLock::new();
+
+/// Install the [`ObjectStore`] that every Lance internal scratch site writes and
+/// reads through ([`ObjectStore::scratch`]). Paths stay absolute filesystem paths
+/// under `lance_core::utils::tempfile::scratch_root`. Set once.
+///
+/// The store must not use the direct-local-file fast path
+/// ([`ObjectStore::has_direct_local_paths`]), which bypasses any wrapper, so such
+/// a store is rejected. Reads are random-access (`get_range`); writes are one
+/// sequential `Writer` per file.
+pub fn set_scratch_object_store(
+    store: Arc<ObjectStore>,
+) -> std::result::Result<(), Arc<ObjectStore>> {
+    if store.has_direct_local_paths() {
+        return Err(store);
+    }
+    SCRATCH_STORE.set(store)
+}
+
 /// Convert a URI string or local path to a URL
 ///
 /// This function handles both proper URIs (with schemes like `file://`, `s3://`, etc.)
@@ -747,6 +766,15 @@ impl ObjectStore {
         )
         .now_or_never()
         .unwrap()
+    }
+
+    /// The object store for Lance's internal scratch files (shuffles, index-build
+    /// spills): the one set by [`set_scratch_object_store`], else [`Self::local`].
+    pub fn scratch() -> Self {
+        SCRATCH_STORE
+            .get()
+            .map(|store| store.as_ref().clone())
+            .unwrap_or_else(Self::local)
     }
 
     /// Local object store.

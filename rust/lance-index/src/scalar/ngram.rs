@@ -1125,7 +1125,7 @@ impl NGramIndexBuilder {
 
         let tmpdir = Arc::new(TempDir::default());
         let spill_store = Arc::new(LanceIndexStore::new(
-            Arc::new(ObjectStore::local()),
+            Arc::new(ObjectStore::scratch()),
             tmpdir.obj_path(),
             Arc::new(LanceCache::no_cache()),
         ));

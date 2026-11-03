@@ -294,7 +294,7 @@ struct SpillDir {
 
 impl SpillDir {
     fn create(limit_bytes: u64) -> Result<Self> {
-        let base = std::env::temp_dir();
+        let base = lance_core::utils::tempfile::scratch_root().unwrap_or_else(std::env::temp_dir);
         let dir = tempfile::Builder::new()
             .prefix("lance-minhash-lsh-")
             .tempdir_in(&base)

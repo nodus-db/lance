@@ -27,6 +27,9 @@ use datafusion_common::DataFusionError;
 use futures::StreamExt;
 use lance_arrow::memory::MemoryAccumulator;
 use lance_core::error::LanceOptionExt;
+use lance_core::utils::tempfile::{
+    ScratchReader, ScratchWrite, scratch_create, scratch_provider_installed,
+};
 
 /// Start a spill of Arrow data to a file that can be read later multiple times.
 ///
@@ -792,14 +795,17 @@ impl AsyncStreamWriter {
         managed_spill: Option<Arc<dyn SpillFile>>,
     ) -> Result<Self, ArrowError> {
         let writer = tokio::task::spawn_blocking(move || {
-            let writer: Box<dyn Write + Send> = if let Some(spill) = managed_spill {
-                Box::new(
+            // ponytail: with a scratch provider installed (encrypted scratch) the managed
+            // file is written through the provider, so DataFusion's DiskManager byte
+            // accounting does not see it; the managed file is still deleted by DataFusion
+            // on drop. Revisit if a provider-aware SpillFile writer appears upstream.
+            let writer: Box<dyn ScratchWrite> = match managed_spill {
+                Some(spill) if !scratch_provider_installed() => Box::new(ManagedWrite(
                     spill
                         .open_writer()
                         .map_err(|error| ArrowError::ExternalError(Box::new(error)))?,
-                )
-            } else {
-                Box::new(std::fs::File::create(&path).map_err(ArrowError::from)?)
+                )),
+                _ => scratch_create(&path).map_err(ArrowError::from)?,
             };
             TrackedStreamWriter::try_new(writer, &schema)
         })
@@ -822,20 +828,37 @@ impl AsyncStreamWriter {
     pub async fn finish(self) -> Result<(), ArrowError> {
         let writer = self.writer.clone();
         tokio::task::spawn_blocking(move || {
-            let mut writer = writer.lock().unwrap();
-            writer.finish()
+            writer.lock().unwrap().finish()
         })
         .await
         .unwrap()
     }
 }
 
+/// DataFusion-managed spill file writer; there is nothing to seal beyond the flush.
+struct ManagedWrite(Box<dyn Write + Send>);
+
+impl Write for ManagedWrite {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.write(buf)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.0.flush()
+    }
+}
+
+impl ScratchWrite for ManagedWrite {
+    fn finish(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 struct TrackedStreamWriter {
-    writer: StreamWriter<BufWriter<Box<dyn Write + Send>>>,
+    writer: StreamWriter<BufWriter<Box<dyn ScratchWrite>>>,
 }
 
 impl TrackedStreamWriter {
-    fn try_new(writer: Box<dyn Write + Send>, schema: &Schema) -> Result<Self, ArrowError> {
+    fn try_new(writer: Box<dyn ScratchWrite>, schema: &Schema) -> Result<Self, ArrowError> {
         let writer = StreamWriter::try_new(BufWriter::new(writer), schema)?;
         let mut tracked = Self { writer };
         tracked.flush()?;
@@ -849,7 +872,12 @@ impl TrackedStreamWriter {
 
     fn finish(&mut self) -> Result<(), ArrowError> {
         self.writer.finish()?;
-        self.flush()
+        self.flush()?;
+        self.writer
+            .get_mut()
+            .get_mut()
+            .finish()
+            .map_err(ArrowError::from)
     }
 
     fn flush(&mut self) -> Result<(), ArrowError> {
@@ -859,13 +887,13 @@ impl TrackedStreamWriter {
 }
 
 struct AsyncStreamReader {
-    reader: Arc<Mutex<StreamReader<BufReader<std::fs::File>>>>,
+    reader: Arc<Mutex<StreamReader<BufReader<ScratchReader>>>>,
 }
 
 impl AsyncStreamReader {
     pub async fn open(path: PathBuf) -> Result<Self, ArrowError> {
         let reader = tokio::task::spawn_blocking(move || {
-            let file = std::fs::File::open(&path).map_err(ArrowError::from)?;
+            let file = ScratchReader::open(&path).map_err(ArrowError::from)?;
             let reader = BufReader::new(file);
             StreamReader::try_new(reader, None)
         })

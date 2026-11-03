@@ -362,10 +362,7 @@ impl SpilledRun {
 /// Write sorted records to `path` as little-endian (key, doc id) pairs.
 fn write_spill_records(path: &Path, records: &[(u64, u32)]) -> std::io::Result<()> {
     use std::io::Write;
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)?;
+    let mut file = lance_core::utils::tempfile::scratch_create(path)?;
     let records_per_write = rows_per_batch(BAND_ROW_BYTES);
     let mut bytes = Vec::with_capacity(records_per_write.min(records.len()) * BAND_ROW_BYTES);
     for chunk in records.chunks(records_per_write) {
@@ -376,16 +373,14 @@ fn write_spill_records(path: &Path, records: &[(u64, u32)]) -> std::io::Result<(
         }
         file.write_all(&bytes)?;
     }
-    Ok(())
+    file.finish()
 }
 
 /// Read the records of `rows` back from a spill file.
 fn read_spill_records(path: &Path, rows: Range<usize>) -> std::io::Result<Vec<(u64, u32)>> {
-    use std::io::{Read, Seek, SeekFrom};
-    let mut file = std::fs::File::open(path)?;
-    file.seek(SeekFrom::Start((rows.start * BAND_ROW_BYTES) as u64))?;
+    let file = lance_core::utils::tempfile::scratch_open(path)?;
     let mut bytes = vec![0u8; rows.len() * BAND_ROW_BYTES];
-    file.read_exact(&mut bytes)?;
+    file.read_exact_at((rows.start * BAND_ROW_BYTES) as u64, &mut bytes)?;
     Ok(bytes
         .as_chunks::<BAND_ROW_BYTES>()
         .0

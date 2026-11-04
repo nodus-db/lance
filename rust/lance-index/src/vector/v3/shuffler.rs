@@ -173,7 +173,7 @@ pub struct IvfShuffler {
 impl IvfShuffler {
     pub fn new(output_dir: Path, num_partitions: usize) -> Self {
         Self {
-            object_store: Arc::new(ObjectStore::local()),
+            object_store: Arc::new(ObjectStore::scratch()),
             output_dir,
             num_partitions,
             format_version: ConcreteFileVersion::V2_0,
@@ -563,7 +563,7 @@ pub struct TwoFileShuffler {
 impl TwoFileShuffler {
     pub fn new(output_dir: Path, num_partitions: usize) -> Self {
         Self {
-            object_store: Arc::new(ObjectStore::local()),
+            object_store: Arc::new(ObjectStore::scratch()),
             output_dir,
             num_partitions,
             batch_size_bytes: shuffle_batch_bytes(),

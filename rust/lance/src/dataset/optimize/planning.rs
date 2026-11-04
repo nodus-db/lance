@@ -21,6 +21,7 @@ use lance_table::format::{
     Fragment, IndexMetadata, ROW_CREATED_AT_VERSION_FIELD_ID, ROW_ID_FIELD_ID,
     ROW_LAST_UPDATED_AT_VERSION_FIELD_ID,
 };
+use lance_table::io::commit::CommitConfig;
 use roaring::RoaringBitmap;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
@@ -326,6 +327,12 @@ pub struct CompactionOptions {
     /// column.
     /// See [`lance_file::writer::FileWriterOptions::data_cache_bytes`].
     pub data_cache_bytes: Option<u64>,
+
+    /// Retries of the internal commits (the fragment-id reservation and the Rewrite commit).
+    /// `None` keeps Lance's default (20, with rebase); `Some(0)` is a single attempt that
+    /// surfaces a concurrent commit as a conflict error.
+    #[serde(default)]
+    pub max_commit_retries: Option<u32>,
 }
 
 #[allow(deprecated)]
@@ -358,6 +365,7 @@ impl Default for CompactionOptions {
             transaction_properties: None,
             has_eager_remappable_index: None,
             data_cache_bytes: None,
+            max_commit_retries: None,
         }
     }
 }
@@ -367,6 +375,14 @@ pub const COMPACTION_CONFIG_PREFIX: &str = "lance.compaction.";
 
 #[allow(deprecated)]
 impl CompactionOptions {
+    pub(super) fn commit_config(&self) -> CommitConfig {
+        let default = CommitConfig::default();
+        CommitConfig {
+            num_retries: self.max_commit_retries.unwrap_or(default.num_retries),
+            ..default
+        }
+    }
+
     /// Create [`CompactionOptions`] by starting with defaults and applying any
     /// overrides found in the dataset manifest config.
     ///

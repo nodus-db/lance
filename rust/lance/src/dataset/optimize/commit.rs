@@ -34,12 +34,14 @@ use lance_core::utils::row_addr_remap::{GroupInput, RowAddrRemap};
 use lance_core::{Error, Result};
 use lance_index::frag_reuse::{FRAG_REUSE_INDEX_NAME, FragReuseGroup};
 use lance_table::format::Fragment;
+use lance_table::io::commit::CommitConfig;
 use roaring::{RoaringBitmap, RoaringTreemap};
 
 /// Returns the version the reservation committed at; `dataset` is not moved to it.
 pub(super) async fn reserve_fragment_ids(
     dataset: &Dataset,
     fragments: impl ExactSizeIterator<Item = &mut Fragment>,
+    commit_config: &CommitConfig,
 ) -> Result<u64> {
     let transaction = Transaction::new(
         dataset.manifest.version,
@@ -55,7 +57,7 @@ pub(super) async fn reserve_fragment_ids(
         dataset.commit_handler.as_ref(),
         &transaction,
         &Default::default(),
-        &Default::default(),
+        commit_config,
         default_commit_retry_timeout(),
         dataset.manifest_location.naming_scheme,
         None,
@@ -245,7 +247,9 @@ pub async fn commit_compaction(
             .collect();
         // A replayed result shares file paths with its earlier commit, so a failed
         // reservation cannot prove the files are unreferenced. Leave them for GC.
-        reserved_version = Some(reserve_fragment_ids(dataset, frags.into_iter()).await?);
+        reserved_version = Some(
+            reserve_fragment_ids(dataset, frags.into_iter(), &options.commit_config()).await?,
+        );
     }
 
     let mut rewrite_groups = Vec::with_capacity(completed_tasks.len());
@@ -426,7 +430,7 @@ pub async fn commit_compaction(
             .flat_map(|group| group.new_fragments.iter_mut())
             .collect::<Vec<_>>();
         // As above, reservation failure does not make replayed files safe to delete.
-        reserve_fragment_ids(dataset, new_fragments.into_iter()).await?;
+        reserve_fragment_ids(dataset, new_fragments.into_iter(), &options.commit_config()).await?;
         Vec::new()
     } else {
         Vec::new()
@@ -571,7 +575,7 @@ pub async fn commit_compaction(
     .build();
 
     if let Err(e) = dataset
-        .apply_commit(transaction, &Default::default(), &Default::default())
+        .apply_commit(transaction, &Default::default(), &options.commit_config())
         .await
     {
         // RewriteResult is serializable and may be retried after an earlier

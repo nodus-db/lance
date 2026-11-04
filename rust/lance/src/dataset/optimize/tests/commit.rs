@@ -1219,3 +1219,55 @@ async fn test_commit_compaction_leaves_blob_v2_sidecars_for_gc_on_commit_failure
         "Blob v2 sidecars should be retained for GC after the Rewrite commit fails"
     );
 }
+
+#[rstest]
+#[case::single_attempt(Some(0), false)]
+#[case::default_retries(None, true)]
+#[tokio::test]
+async fn test_max_commit_retries_bounds_rewrite_commit(
+    #[case] max_commit_retries: Option<u32>,
+    #[case] succeeds: bool,
+) {
+    let dir = TempStrDir::default();
+    let handler = Arc::new(RaceBeforeRewrite::default());
+    let mut dataset = racing_dataset(dir.as_str(), handler.clone()).await;
+    handler.arm(&dataset, vec![Race::Append]);
+    let before = Dataset::open(dir.as_str()).await.unwrap().manifest.version;
+    let result = compact_files(
+        &mut dataset,
+        CompactionOptions {
+            target_rows_per_fragment: 100,
+            defer_index_remap: true,
+            max_commit_retries,
+            ..Default::default()
+        },
+        None,
+    )
+    .await;
+    let latest = Dataset::open(dir.as_str()).await.unwrap();
+    // versions after `before`: the fragment-id reservation, the racing append, and (if it got in) the rewrite
+    let mut ops = Vec::new();
+    for v in before + 1..=latest.manifest.version {
+        let txn = latest
+            .read_transaction_by_version(v)
+            .await
+            .unwrap()
+            .unwrap();
+        ops.push(txn.operation.to_string());
+    }
+    if succeeds {
+        result.unwrap();
+        assert_eq!(ops, ["ReserveFragments", "Append", "Rewrite"]);
+    } else {
+        let error = result.unwrap_err();
+        assert!(
+            matches!(
+                error,
+                Error::CommitConflict { .. } | Error::RetryableCommitConflict { .. }
+            ),
+            "{error}"
+        );
+        // only the racing append landed after the reservation: no rebase, no Rewrite version
+        assert_eq!(ops, ["ReserveFragments", "Append"]);
+    }
+}

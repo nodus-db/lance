@@ -224,7 +224,7 @@ impl IvfShuffler {
 
     fn new_in(scratch: ScratchDir, num_partitions: usize) -> Self {
         Self {
-            object_store: Arc::new(ObjectStore::local()),
+            object_store: Arc::new(ObjectStore::scratch()),
             output_dir: scratch.output_dir().clone(),
             num_partitions,
             format_version: ConcreteFileVersion::V2_0,
@@ -683,7 +683,7 @@ impl TwoFileShuffler {
 
     fn new_in(scratch: ScratchDir, num_partitions: usize) -> Self {
         Self {
-            object_store: Arc::new(ObjectStore::local()),
+            object_store: Arc::new(ObjectStore::scratch()),
             output_dir: scratch.output_dir().clone(),
             num_partitions,
             batch_size_bytes: shuffle_batch_bytes(),

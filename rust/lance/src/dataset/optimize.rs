@@ -142,6 +142,7 @@ use lance_table::format::{
     Fragment, IndexMetadata, ROW_CREATED_AT_VERSION_FIELD_ID, ROW_ID_FIELD_ID,
     ROW_LAST_UPDATED_AT_VERSION_FIELD_ID, RowDatasetVersionSequence,
 };
+use lance_table::io::commit::CommitConfig;
 use lance_table::rowids::RowIdSequence;
 use roaring::{RoaringBitmap, RoaringTreemap};
 use serde::{Deserialize, Serialize};
@@ -367,6 +368,11 @@ pub struct CompactionOptions {
     #[doc(hidden)]
     #[serde(default)]
     pub has_eager_remappable_index: Option<bool>,
+    /// Retries of the internal commits (the fragment-id reservation and the Rewrite commit).
+    /// `None` keeps Lance's default (20, with rebase); `Some(0)` is a single attempt that
+    /// surfaces a concurrent commit as a conflict error.
+    #[serde(default)]
+    pub max_commit_retries: Option<u32>,
 }
 
 #[allow(deprecated)]
@@ -396,6 +402,7 @@ impl Default for CompactionOptions {
             data_storage_version: None,
             transaction_properties: None,
             has_eager_remappable_index: None,
+            max_commit_retries: None,
         }
     }
 }
@@ -405,6 +412,14 @@ pub const COMPACTION_CONFIG_PREFIX: &str = "lance.compaction.";
 
 #[allow(deprecated)]
 impl CompactionOptions {
+    fn commit_config(&self) -> CommitConfig {
+        let default = CommitConfig::default();
+        CommitConfig {
+            num_retries: self.max_commit_retries.unwrap_or(default.num_retries),
+            ..default
+        }
+    }
+
     /// Create [`CompactionOptions`] by starting with defaults and applying any
     /// overrides found in the dataset manifest config.
     ///
@@ -2476,6 +2491,7 @@ pub struct RewriteResult {
 async fn reserve_fragment_ids(
     dataset: &Dataset,
     fragments: impl ExactSizeIterator<Item = &mut Fragment>,
+    commit_config: &CommitConfig,
 ) -> Result<u64> {
     let transaction = Transaction::new(
         dataset.manifest.version,
@@ -2491,7 +2507,7 @@ async fn reserve_fragment_ids(
         dataset.commit_handler.as_ref(),
         &transaction,
         &Default::default(),
-        &Default::default(),
+        commit_config,
         default_commit_retry_timeout(),
         dataset.manifest_location.naming_scheme,
         None,
@@ -3502,7 +3518,7 @@ pub async fn commit_compaction(
             .filter(|t| t.row_addrs.is_some())
             .flat_map(|t| t.new_fragments.iter_mut())
             .collect();
-        match reserve_fragment_ids(dataset, frags.into_iter()).await {
+        match reserve_fragment_ids(dataset, frags.into_iter(), &options.commit_config()).await {
             Ok(version) => reserved_version = Some(version),
             Err(e) => {
                 cleanup_compaction_files_after_reservation_failure(dataset, &all_new_fragments)
@@ -3725,7 +3741,9 @@ pub async fn commit_compaction(
             .iter_mut()
             .flat_map(|group| group.new_fragments.iter_mut())
             .collect::<Vec<_>>();
-        if let Err(e) = reserve_fragment_ids(dataset, new_fragments.into_iter()).await {
+        if let Err(e) =
+            reserve_fragment_ids(dataset, new_fragments.into_iter(), &options.commit_config()).await
+        {
             cleanup_compaction_files_after_reservation_failure(dataset, &all_new_fragments).await;
             return Err(e);
         }
@@ -3875,7 +3893,7 @@ pub async fn commit_compaction(
     .build();
 
     if let Err(e) = dataset
-        .apply_commit(transaction, &Default::default(), &Default::default())
+        .apply_commit(transaction, &Default::default(), &options.commit_config())
         .await
     {
         // RewriteResult is serializable and may be retried after an earlier
@@ -7267,7 +7285,7 @@ mod tests {
                 .iter_mut()
                 .flat_map(|r| r.new_fragments.iter_mut())
                 .collect();
-            reserve_fragment_ids(&dataset2, frags.into_iter())
+            reserve_fragment_ids(&dataset2, frags.into_iter(), &Default::default())
                 .await
                 .unwrap();
         }
@@ -8530,6 +8548,58 @@ mod tests {
         dataset.delete("i >= 10 AND i < 60").await.unwrap();
         create_scalar_index(&mut dataset, "i", false).await;
         dataset
+    }
+
+    #[rstest]
+    #[case::single_attempt(Some(0), false)]
+    #[case::default_retries(None, true)]
+    #[tokio::test]
+    async fn test_max_commit_retries_bounds_rewrite_commit(
+        #[case] max_commit_retries: Option<u32>,
+        #[case] succeeds: bool,
+    ) {
+        let dir = TempStrDir::default();
+        let handler = Arc::new(RaceBeforeRewrite::default());
+        let mut dataset = racing_dataset(dir.as_str(), handler.clone()).await;
+        handler.arm(&dataset, vec![Race::Append]);
+        let before = Dataset::open(dir.as_str()).await.unwrap().manifest.version;
+        let result = compact_files(
+            &mut dataset,
+            CompactionOptions {
+                target_rows_per_fragment: 100,
+                defer_index_remap: true,
+                max_commit_retries,
+                ..Default::default()
+            },
+            None,
+        )
+        .await;
+        let latest = Dataset::open(dir.as_str()).await.unwrap();
+        // versions after `before`: the fragment-id reservation, the racing append, and (if it got in) the rewrite
+        let mut ops = Vec::new();
+        for v in before + 1..=latest.manifest.version {
+            let txn = latest
+                .read_transaction_by_version(v)
+                .await
+                .unwrap()
+                .unwrap();
+            ops.push(txn.operation.to_string());
+        }
+        if succeeds {
+            result.unwrap();
+            assert_eq!(ops, ["ReserveFragments", "Append", "Rewrite"]);
+        } else {
+            let error = result.unwrap_err();
+            assert!(
+                matches!(
+                    error,
+                    Error::CommitConflict { .. } | Error::RetryableCommitConflict { .. }
+                ),
+                "{error}"
+            );
+            // only the racing append landed after the reservation: no rebase, no Rewrite version
+            assert_eq!(ops, ["ReserveFragments", "Append"]);
+        }
     }
 
     #[derive(Clone, Copy, Debug)]

@@ -77,6 +77,12 @@ pub struct OptimizeOptions {
     /// most this many rows; `None` merges everything into one segment. See
     /// `max_rows_per_task` for what setting it changes.
     pub max_rows_per_segment: Option<u64>,
+
+    /// Retries of the commit that publishes the optimized indices. `None` keeps Lance's
+    /// default (20, with rebase). `Some(0)` is a single attempt: a manifest-write version
+    /// collision surfaces as a commit conflict instead of being rebased and retried. The first
+    /// attempt still checks and rebases over commits made since the read version.
+    pub max_commit_retries: Option<u32>,
 }
 
 impl Default for OptimizeOptions {
@@ -90,6 +96,7 @@ impl Default for OptimizeOptions {
             progress: noop_progress(),
             max_rows_per_task: None,
             max_rows_per_segment: None,
+            max_commit_retries: None,
         }
     }
 }
@@ -153,6 +160,12 @@ impl OptimizeOptions {
     /// Set progress callback for index building during optimization.
     pub fn progress(mut self, progress: Arc<dyn IndexBuildProgress>) -> Self {
         self.progress = progress;
+        self
+    }
+
+    /// Bound the retries of the publishing commit; `Some(0)` is a single attempt.
+    pub fn max_commit_retries(mut self, retries: Option<u32>) -> Self {
+        self.max_commit_retries = retries;
         self
     }
 

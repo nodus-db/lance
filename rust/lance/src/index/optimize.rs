@@ -67,6 +67,7 @@ use lance_index::metrics::NoOpMetricsCollector;
 use lance_index::optimize::OptimizeOptions;
 use lance_index::progress::{IndexBuildProgress, noop_progress};
 use lance_table::format::{Fragment, IndexMetadata};
+use lance_table::io::commit::CommitConfig;
 use roaring::RoaringBitmap;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -1163,6 +1164,11 @@ pub async fn commit_optimize_indices(
     results: Vec<IndexSegmentResult>,
     options: &OptimizeOptions,
 ) -> Result<()> {
+    let default = CommitConfig::default();
+    let commit_config = CommitConfig {
+        num_retries: options.max_commit_retries.unwrap_or(default.num_retries),
+        ..default
+    };
     if results.is_empty() {
         let indices = load_all_indices(dataset).await?;
         if !dataset.mem_wal_catch_up_would_advance(&indices)?
@@ -1180,7 +1186,7 @@ pub async fn commit_optimize_indices(
         .transaction_properties(options.transaction_properties.clone())
         .build();
         return dataset
-            .apply_commit(transaction, &Default::default(), &Default::default())
+            .apply_commit(transaction, &Default::default(), &commit_config)
             .await;
     }
     let read_version = results[0].read_version;
@@ -1265,7 +1271,7 @@ pub async fn commit_optimize_indices(
     .transaction_properties(options.transaction_properties.clone())
     .build();
     dataset
-        .apply_commit(transaction, &Default::default(), &Default::default())
+        .apply_commit(transaction, &Default::default(), &commit_config)
         .await?;
     Ok(())
 }
@@ -1675,5 +1681,119 @@ mod tests {
         let segments = segments(&dataset, SCALAR_INDEX).await;
         assert_eq!(segments.len(), 1);
         assert_eq!(coverage(&segments), RoaringBitmap::from_iter([2u32, 3]));
+    }
+
+    /// Appends once, right before the first `CreateIndex` manifest write.
+    #[derive(Debug, Default)]
+    struct RaceBeforeCreateIndex {
+        handle: std::sync::Mutex<Option<Dataset>>,
+    }
+
+    #[async_trait::async_trait]
+    impl lance_table::io::commit::CommitHandler for RaceBeforeCreateIndex {
+        async fn commit(
+            &self,
+            manifest: &mut lance_table::format::Manifest,
+            indices: Option<Vec<IndexMetadata>>,
+            base_path: &object_store::path::Path,
+            object_store: &lance_io::object_store::ObjectStore,
+            manifest_writer: lance_table::io::commit::ManifestWriter,
+            naming_scheme: lance_table::io::commit::ManifestNamingScheme,
+            transaction: Option<lance_table::format::Transaction>,
+        ) -> std::result::Result<
+            lance_table::io::commit::ManifestLocation,
+            lance_table::io::commit::CommitError,
+        > {
+            let is_create_index = transaction
+                .as_ref()
+                .and_then(|transaction| transaction.as_pb().operation.as_ref())
+                .is_some_and(|operation| {
+                    matches!(
+                        operation,
+                        lance_table::format::pb::transaction::Operation::CreateIndex(_)
+                    )
+                });
+            let handle = if is_create_index {
+                self.handle.lock().unwrap().take()
+            } else {
+                None
+            };
+            if let Some(mut handle) = handle {
+                handle.checkout_latest().await.unwrap();
+                append(&mut handle, 10, 10).await;
+            }
+            lance_table::io::commit::ConditionalPutCommitHandler
+                .commit(
+                    manifest,
+                    indices,
+                    base_path,
+                    object_store,
+                    manifest_writer,
+                    naming_scheme,
+                    transaction,
+                )
+                .await
+        }
+    }
+
+    #[rstest::rstest]
+    #[case::single_attempt(Some(0), false)]
+    #[case::default_retries(None, true)]
+    #[tokio::test]
+    async fn test_max_commit_retries_bounds_index_commit(
+        #[case] max_commit_retries: Option<u32>,
+        #[case] succeeds: bool,
+    ) {
+        let test_dir = TempStrDir::default();
+        let handler = Arc::new(RaceBeforeCreateIndex::default());
+        let batch = batch(0, 100);
+        let reader = RecordBatchIterator::new(vec![Ok(batch.clone())], batch.schema());
+        let mut dataset = Dataset::write(
+            reader,
+            &test_dir,
+            Some(WriteParams {
+                commit_handler: Some(handler.clone()),
+                ..params(50)
+            }),
+        )
+        .await
+        .unwrap();
+        create_btree_index(&mut dataset).await;
+        append(&mut dataset, 100, 50).await;
+        let before = dataset.manifest.version;
+
+        let options = OptimizeOptions::append().max_commit_retries(max_commit_retries);
+        let plan = plan_optimize_indices(&dataset, &options).await.unwrap();
+        let merged = execute_plan(&dataset, &plan).await;
+        assert!(!merged.is_empty());
+        *handler.handle.lock().unwrap() = Some(dataset.clone());
+        let result = commit_optimize_indices(&mut dataset, merged, &options).await;
+
+        let latest = Dataset::open(&test_dir).await.unwrap();
+        let mut ops = Vec::new();
+        for version in before + 1..=latest.manifest.version {
+            let transaction = latest
+                .read_transaction_by_version(version)
+                .await
+                .unwrap()
+                .unwrap();
+            ops.push(transaction.operation.to_string());
+        }
+        if succeeds {
+            result.unwrap();
+            assert_eq!(ops, ["Append", "CreateIndex"]);
+        } else {
+            let error = result.unwrap_err();
+            assert!(
+                matches!(
+                    error,
+                    lance_core::Error::CommitConflict { .. }
+                        | lance_core::Error::RetryableCommitConflict { .. }
+                ),
+                "{error}"
+            );
+            // only the racing append landed: no rebase, no CreateIndex version
+            assert_eq!(ops, ["Append"]);
+        }
     }
 }

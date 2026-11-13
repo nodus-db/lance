@@ -87,19 +87,19 @@ all_asserts = "2.3.1"
 approx = "0.5.1"
 argminmax = "0.7.1"
 # Note that this one does not include pyarrow
-arrow = { version = "59.2.0", optional = false, features = ["prettyprint"] }
+arrow = { version = "60.1.0", optional = false, features = ["prettyprint"] }
 lance-arrow-scalar = { version = "=59.0.0", path = "./rust/arrow-scalar" }
 lance-arrow-stats = { version = "=59.0.0", path = "./rust/arrow-stats" }
-arrow-arith = "59.2.0"
-arrow-array = "59.2.0"
-arrow-buffer = "59.2.0"
-arrow-cast = "59.2.0"
-arrow-data = "59.2.0"
-arrow-ipc = { version = "59.2.0", features = ["zstd"] }
-arrow-ord = "59.2.0"
-arrow-row = "59.2.0"
-arrow-schema = "59.2.0"
-arrow-select = "59.2.0"
+arrow-arith = "60.1.0"
+arrow-array = "60.1.0"
+arrow-buffer = "60.1.0"
+arrow-cast = "60.1.0"
+arrow-data = "60.1.0"
+arrow-ipc = { version = "60.1.0", features = ["zstd"] }
+arrow-ord = "60.1.0"
+arrow-row = "60.1.0"
+arrow-schema = "60.1.0"
+arrow-select = "60.1.0"
 async-recursion = "1.0"
 async-trait = "0.1"
 axum = "0.7"
@@ -161,8 +161,8 @@ nalgebra = { version = "0.33.2", default-features = false, features = ["std"] }
 fst = { version = "0.4.7", features = ["levenshtein"] }
 fsst = { version = "=15.0.0-beta.19", path = "./rust/compression/fsst" }
 futures = "0.3"
-geoarrow-array = "0.9"
-geoarrow-schema = "0.9"
+geoarrow-array = "0.10"
+geoarrow-schema = "0.10"
 geodatafusion = "0.6.0"
 geo-traits = "0.3.0"
 geo-types = "0.7.16"
@@ -204,7 +204,7 @@ goosefs-sdk = { version = "0.2.2", default-features = false }
 # Cache features (`metadata-cache`, `page-cache-io-uring`) belong on the
 # consumer (`lance-io`'s `goosefs` feature), not this workspace pin.
 opendal-service-goosefs = { version = "0.59.2", default-features = false }
-parquet = { version = "59.2.0", default-features = false, features = [
+parquet = { version = "60.1.0", default-features = false, features = [
     "arrow",
     "async",
 ] }

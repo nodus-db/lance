@@ -2806,13 +2806,13 @@ mod tests {
 
     #[test]
     fn test_schema_project_by_schema() {
-        let metadata = [("key".to_string(), "value".to_string())];
+        let metadata = arrow_schema::Metadata::new().with("key", "value");
         let schema = Arc::new(
             Schema::new(vec![
                 Field::new("a", DataType::Int32, true),
                 Field::new("b", DataType::Utf8, true),
             ])
-            .with_metadata(metadata.clone().into()),
+            .with_metadata(metadata.clone()),
         );
         let batch = RecordBatch::try_new(
             schema,
@@ -2828,7 +2828,7 @@ mod tests {
         // Empty schema
         let empty_schema = Schema::empty();
         let empty_projected = batch.project_by_schema(&empty_schema).unwrap();
-        let expected_schema = empty_schema.with_metadata(metadata.clone().into());
+        let expected_schema = empty_schema.with_metadata(metadata.clone());
         assert_eq!(
             empty_projected,
             RecordBatch::from(StructArray::new_empty_fields(batch.num_rows(), None))
@@ -2842,7 +2842,7 @@ mod tests {
             Field::new("a", DataType::Int32, true),
         ]);
         let reordered_projected = batch.project_by_schema(&reordered_schema).unwrap();
-        let expected_schema = Arc::new(reordered_schema.with_metadata(metadata.clone().into()));
+        let expected_schema = Arc::new(reordered_schema.with_metadata(metadata.clone()));
         assert_eq!(
             reordered_projected,
             RecordBatch::try_new(
@@ -2860,7 +2860,7 @@ mod tests {
         // Sub schema
         let sub_schema = Schema::new(vec![Field::new("a", DataType::Int32, true)]);
         let sub_projected = batch.project_by_schema(&sub_schema).unwrap();
-        let expected_schema = Arc::new(sub_schema.with_metadata(metadata.into()));
+        let expected_schema = Arc::new(sub_schema.with_metadata(metadata));
         assert_eq!(
             sub_projected,
             RecordBatch::try_new(

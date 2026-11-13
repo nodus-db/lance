@@ -547,10 +547,13 @@ pub fn create_owned_ivf_shuffler(
     format_version: ConcreteFileVersion,
     progress: Option<Arc<dyn crate::progress::IndexBuildProgress>>,
 ) -> Result<Box<dyn Shuffler>> {
-    let scratch_dir = tempfile::TempDir::new().map_err(|e| {
+    // the directory is named under the scratch root (set_scratch_root), like every other scratch site
+    let scratch_dir = lance_core::utils::tempfile::scratch_tempdir().map_err(|e| {
         Error::io(format!(
             "failed to create a shuffle scratch directory under {}: {}",
-            std::env::temp_dir().display(),
+            lance_core::utils::tempfile::scratch_root()
+                .unwrap_or_else(std::env::temp_dir)
+                .display(),
             e
         ))
     })?;

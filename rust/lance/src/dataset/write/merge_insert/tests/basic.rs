@@ -150,8 +150,7 @@ async fn test_merge_insert_defaults_to_unenforced_primary_key() {
         [(
             "lance-schema:unenforced-primary-key".to_string(),
             "true".to_string(),
-        )]
-        .into(),
+        )],
     );
     let value_field = Field::new("value", DataType::Int32, false);
     let schema = Arc::new(Schema::new(vec![id_field, value_field]));

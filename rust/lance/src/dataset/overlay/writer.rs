@@ -1608,7 +1608,7 @@ mod tests {
                 lance_arrow::BLOB_V2_EXT_NAME.to_string(),
             )]
             .into_iter()
-            .collect(),
+            .collect::<arrow_schema::Metadata>(),
         );
         let arrow_schema = Arc::new(ArrowSchema::new(vec![blob]));
         let base = RecordBatch::try_new(arrow_schema.clone(), vec![descriptor]).unwrap();

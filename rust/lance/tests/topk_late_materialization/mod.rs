@@ -354,7 +354,7 @@ async fn sql_limit_covering_the_table_is_left_alone() {
 }
 
 fn erase_metadata(schema: &Schema) -> Schema {
-    schema.clone().with_metadata(Default::default())
+    schema.clone().with_metadata(arrow_schema::Metadata::default())
 }
 
 /// A node a `TableProvider` wraps around the Lance scan, which drops the

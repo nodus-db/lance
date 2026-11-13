@@ -97,9 +97,7 @@ impl<OffsetSize: OffsetSizeTrait> ListArrayExt for GenericListArray<OffsetSize> 
 
     fn trimmed_offsets(&self) -> OffsetBuffer<OffsetSize> {
         let offsets = self.offsets();
-        let Some(&first) = offsets.first() else {
-            return offsets.clone();
-        };
+        let first = offsets.first();
         if first == OffsetSize::zero() {
             return offsets.clone();
         }

@@ -727,7 +727,7 @@ mod tests {
                     true,
                 ),
             ],
-            Default::default(),
+            arrow_schema::Metadata::default(),
         ));
 
         let batch = RecordBatch::try_new(

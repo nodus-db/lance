@@ -1116,7 +1116,7 @@ impl TryFrom<&ArrowSchema> for Schema {
                 .iter()
                 .map(|f| Field::try_from(f.as_ref()))
                 .collect::<Result<_>>()?,
-            metadata: schema.metadata.clone(),
+            metadata: (&schema.metadata).into(),
         };
         schema.try_set_field_id(None)?;
         schema.validate()?;
@@ -1132,7 +1132,7 @@ impl From<&Schema> for ArrowSchema {
     fn from(schema: &Schema) -> Self {
         Self {
             fields: schema.fields.iter().map(ArrowField::from).collect(),
-            metadata: schema.metadata.clone(),
+            metadata: schema.metadata.clone().into(),
         }
     }
 }

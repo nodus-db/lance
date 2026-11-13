@@ -273,18 +273,18 @@ impl BlobPreprocessField {
                 Some(BlobV2Layout::Prepared | BlobV2Layout::Logical) => Ok(Self {
                     kind: BlobPreprocessFieldKind::BlobV2 {
                         inline_threshold: blob_inline_threshold_from_metadata(
-                            field.metadata(),
+                            &field.metadata().into(),
                             field.name(),
                         )?,
                         dedicated_threshold: blob_dedicated_threshold_from_metadata(
-                            field.metadata(),
+                            &field.metadata().into(),
                             field.name(),
                         )?,
                         pack_file_threshold: blob_pack_file_threshold_from_metadata(
-                            field.metadata(),
+                            &field.metadata().into(),
                             field.name(),
                         )?,
-                        writer_metadata: field.metadata().clone(),
+                        writer_metadata: field.metadata().into(),
                     },
                 }),
                 _ => Err(blob_v2_shape_error(
@@ -1122,14 +1122,8 @@ impl BlobPreprocessor {
             list_arr.clone()
         };
 
-        let first_offset = *list_arr
-            .offsets()
-            .first()
-            .ok_or_else(|| Error::invalid_input("List offsets cannot be empty"))?;
-        let last_offset = *list_arr
-            .offsets()
-            .last()
-            .ok_or_else(|| Error::invalid_input("List offsets cannot be empty"))?;
+        let first_offset = list_arr.offsets().first();
+        let last_offset = list_arr.offsets().last();
         let values_len = list_arr.values().len();
         let needs_trim = first_offset != O::zero()
             || last_offset.to_usize().ok_or_else(|| {
@@ -1425,7 +1419,7 @@ mod tests {
             .unwrap();
         let (field, array) = values.finish().unwrap().into_parts();
         let (array, _) = preprocessor
-            .rewrite_sidecars(array, &field, 1024, field.metadata())
+            .rewrite_sidecars(array, &field, 1024, &field.metadata().into())
             .await
             .unwrap();
         let array = array.as_struct();

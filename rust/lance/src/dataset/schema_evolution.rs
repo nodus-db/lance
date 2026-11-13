@@ -7278,8 +7278,7 @@ mod test {
             [(
                 "lance-schema:unenforced-primary-key:position".to_string(),
                 "1".to_string(),
-            )]
-            .into(),
+            )],
         );
         let schema = Arc::new(ArrowSchema::new(vec![
             pk,

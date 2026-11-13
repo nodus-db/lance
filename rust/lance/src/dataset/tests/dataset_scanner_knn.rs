@@ -91,7 +91,7 @@ async fn test_knn_nodes(
             ),
             ArrowField::new(DIST_COL, DataType::Float32, true),
         ])
-        .with_metadata([("dataset".into(), "vector".into())].into())
+        .with_metadata([("dataset".to_string(), "vector".to_string())])
     );
 
     let expected_i = BTreeSet::from_iter(vec![1, 81, 161, 241, 321]);
@@ -2133,7 +2133,7 @@ async fn test_knn_with_prefilter(
             ),
             ArrowField::new(DIST_COL, DataType::Float32, true),
         ])
-        .with_metadata([("dataset".into(), "vector".into())].into())
+        .with_metadata([("dataset".to_string(), "vector".to_string())])
     );
 
     // These match the query exactly.  The 5 results must include these 3.
@@ -2265,7 +2265,7 @@ async fn test_knn_with_filter(
             ),
             ArrowField::new(DIST_COL, DataType::Float32, true),
         ])
-        .with_metadata([("dataset".into(), "vector".into())].into())
+        .with_metadata([("dataset".to_string(), "vector".to_string())])
     );
 
     let expected_i = BTreeSet::from_iter(vec![161, 241, 321]);
@@ -2415,7 +2415,7 @@ async fn test_refine_factor(
             ),
             ArrowField::new(DIST_COL, DataType::Float32, true),
         ])
-        .with_metadata([("dataset".into(), "vector".into())].into())
+        .with_metadata([("dataset".to_string(), "vector".to_string())])
     );
 
     let expected_i = BTreeSet::from_iter(vec![1, 81, 161, 241, 321]);

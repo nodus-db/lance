@@ -1744,7 +1744,7 @@ fn deserialize_appender_batches(bytes: Bytes) -> Result<DecodedEntry> {
                 WRITER_EPOCH_KEY, e
             ))
         })?;
-    let target = target_from_metadata(schema.metadata())?;
+    let target = target_from_metadata(&schema.metadata().into())?;
     let generation = schema
         .metadata()
         .get(GENERATION_KEY)

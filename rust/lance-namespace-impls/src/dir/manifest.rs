@@ -1705,7 +1705,7 @@ impl ManifestNamespace {
                     "0".to_string(),
                 )]
                 .into_iter()
-                .collect(),
+                .collect::<arrow_schema::Metadata>(),
             ),
             Field::new("object_type", DataType::Utf8, false),
             Field::new("location", DataType::Utf8, true),

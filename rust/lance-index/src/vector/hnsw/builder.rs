@@ -2038,7 +2038,7 @@ mod tests {
         )
         .unwrap();
         let batch = builder.to_batch().unwrap();
-        let metadata = batch.schema_ref().metadata().clone();
+        let metadata: std::collections::HashMap<String, String> = batch.schema_ref().metadata().into();
         writer.write(&[batch]).await.unwrap();
         writer.finish_with_metadata(&metadata).await.unwrap();
 
@@ -2100,7 +2100,7 @@ mod tests {
         )
         .unwrap();
         let batch = builder.to_batch().unwrap();
-        let metadata = batch.schema_ref().metadata().clone();
+        let metadata: std::collections::HashMap<String, String> = batch.schema_ref().metadata().into();
         writer.write(&[batch]).await.unwrap();
         writer.finish_with_metadata(&metadata).await.unwrap();
 

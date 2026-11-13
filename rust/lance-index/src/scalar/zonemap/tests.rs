@@ -3508,11 +3508,11 @@ fn transform_seed(
     use std::io::Cursor;
 
     let mut reader = IpcReader::try_new(Cursor::new(bytes.as_ref()), None).unwrap();
-    let mut metadata = reader.schema().metadata.clone();
+    let mut metadata: std::collections::HashMap<String, String> = reader.schema().metadata.clone().into();
     let batch = reader.next().unwrap().unwrap();
     let batch = transform(&mut metadata, batch);
     let mut schema = batch.schema().as_ref().clone();
-    schema.metadata = metadata;
+    schema.metadata = metadata.into();
     let batch = RecordBatch::try_new(Arc::new(schema), batch.columns().to_vec()).unwrap();
     let mut buf = Cursor::new(Vec::new());
     {

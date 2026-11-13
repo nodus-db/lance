@@ -215,8 +215,8 @@ impl ArrayFieldEncodingStrategy {
         let offsets = array.offsets();
         if reachable.is_none()
             && array.null_count() == 0
-            && offsets.first().map(|offset| offset.as_usize()) == Some(0)
-            && offsets.last().map(|offset| offset.as_usize()) == Some(values_len)
+            && offsets.first().as_usize() == 0
+            && offsets.last().as_usize() == values_len
         {
             return None;
         }
@@ -242,8 +242,8 @@ impl ArrayFieldEncodingStrategy {
         let offsets = array.offsets();
         if reachable.is_none()
             && array.null_count() == 0
-            && offsets.first().copied() == Some(0)
-            && offsets.last().copied() == Some(values_len as i32)
+            && offsets.first() == 0
+            && offsets.last() == values_len as i32
         {
             return None;
         }

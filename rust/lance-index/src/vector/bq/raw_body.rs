@@ -194,7 +194,8 @@ fn parse_schema(message: &[u8]) -> Result<Schema> {
     if schema.fields().is_none() {
         return Err(corrupt("schema message has no field list".to_string()));
     }
-    Ok(arrow_ipc::convert::fb_to_schema(schema))
+    arrow_ipc::convert::try_fb_to_schema(schema)
+        .map_err(|e| corrupt(format!("invalid schema: {e}")))
 }
 
 /// A bounds-checked cursor over a raw body.

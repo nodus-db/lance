@@ -2980,7 +2980,7 @@ async fn test_blob_v2_external_ingest_inline_slice() {
 
     let metadata = [(ARROW_EXT_NAME_KEY.to_string(), BLOB_V2_EXT_NAME.to_string())]
         .into_iter()
-        .collect();
+        .collect::<arrow_schema::Metadata>();
     let blob_field = Field::new(
         "blob",
         DataType::Struct(

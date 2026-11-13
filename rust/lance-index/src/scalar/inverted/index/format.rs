@@ -299,21 +299,38 @@ impl PostingTailCodec {
     }
 }
 
+/// Key lookup over lance (`HashMap`) and arrow (`Metadata`) schema metadata.
+pub(in super::super) trait MetadataLookup {
+    fn lookup(&self, key: &str) -> Option<&String>;
+}
+
+impl MetadataLookup for HashMap<String, String> {
+    fn lookup(&self, key: &str) -> Option<&String> {
+        self.get(key)
+    }
+}
+
+impl MetadataLookup for arrow_schema::Metadata {
+    fn lookup(&self, key: &str) -> Option<&String> {
+        self.get(key)
+    }
+}
+
 pub(in super::super) fn parse_posting_tail_codec(
-    metadata: &HashMap<String, String>,
+    metadata: &impl MetadataLookup,
 ) -> Result<PostingTailCodec> {
     Ok(metadata
-        .get(POSTING_TAIL_CODEC_KEY)
+        .lookup(POSTING_TAIL_CODEC_KEY)
         .map(|codec| PostingTailCodec::from_metadata_value(codec))
         .transpose()?
         .unwrap_or(PostingTailCodec::Fixed32))
 }
 
 pub(in super::super) fn parse_posting_block_size(
-    metadata: &HashMap<String, String>,
+    metadata: &impl MetadataLookup,
 ) -> Result<usize> {
     metadata
-        .get(POSTING_BLOCK_SIZE_KEY)
+        .lookup(POSTING_BLOCK_SIZE_KEY)
         .map(|value| {
             let block_size = value.parse::<usize>().map_err(|err| {
                 Error::index(format!(
@@ -347,14 +364,14 @@ impl PositionStreamCodec {
 }
 
 pub(super) fn parse_shared_position_codec(
-    metadata: &HashMap<String, String>,
+    metadata: &impl MetadataLookup,
 ) -> Result<PositionStreamCodec> {
-    if let Some(codec) = metadata.get(POSITIONS_CODEC_KEY) {
+    if let Some(codec) = metadata.lookup(POSITIONS_CODEC_KEY) {
         return PositionStreamCodec::from_metadata_value(codec);
     }
 
     match metadata
-        .get(POSITIONS_LAYOUT_KEY)
+        .lookup(POSITIONS_LAYOUT_KEY)
         .map(|layout| layout.as_str())
     {
         Some(POSITIONS_LAYOUT_SHARED_STREAM_V2) => Ok(PositionStreamCodec::VarintDocDelta),
@@ -363,9 +380,9 @@ pub(super) fn parse_shared_position_codec(
 }
 
 pub(in super::super) fn parse_format_version_from_metadata(
-    metadata: &HashMap<String, String>,
+    metadata: &impl MetadataLookup,
 ) -> Result<InvertedListFormatVersion> {
-    if let Some(value) = metadata.get(FTS_FORMAT_VERSION_KEY) {
+    if let Some(value) = metadata.lookup(FTS_FORMAT_VERSION_KEY) {
         let format_version = InvertedListFormatVersion::from_str(value)?;
         let block_size = parse_posting_block_size(metadata)?;
         validate_format_version_block_size(format_version, block_size)?;
@@ -374,7 +391,7 @@ pub(in super::super) fn parse_format_version_from_metadata(
     let block_size = parse_posting_block_size(metadata)?;
     if block_size == 256 {
         if metadata
-            .get(POSTING_TAIL_CODEC_KEY)
+            .lookup(POSTING_TAIL_CODEC_KEY)
             .map(|_| parse_posting_tail_codec(metadata))
             .transpose()?
             .is_some_and(|posting_tail_codec| posting_tail_codec != PostingTailCodec::VarintDelta)
@@ -385,7 +402,7 @@ pub(in super::super) fn parse_format_version_from_metadata(
         }
         return Ok(InvertedListFormatVersion::V3);
     }
-    if metadata.contains_key(POSITIONS_CODEC_KEY) || metadata.contains_key(POSITIONS_LAYOUT_KEY) {
+    if metadata.lookup(POSITIONS_CODEC_KEY).is_some() || metadata.lookup(POSITIONS_LAYOUT_KEY).is_some() {
         return Ok(InvertedListFormatVersion::V2);
     }
     if parse_posting_tail_codec(metadata)? == PostingTailCodec::VarintDelta {

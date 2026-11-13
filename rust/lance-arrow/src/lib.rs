@@ -613,7 +613,7 @@ pub trait RecordBatchExt {
     fn project_by_schema(&self, schema: &Schema) -> Result<RecordBatch>;
 
     /// metadata of the schema.
-    fn metadata(&self) -> &HashMap<String, String>;
+    fn metadata(&self) -> &arrow_schema::Metadata;
 
     /// Add metadata to the schema.
     fn add_metadata(&self, key: String, value: String) -> Result<RecordBatch> {
@@ -623,7 +623,7 @@ pub trait RecordBatchExt {
     }
 
     /// Replace the schema metadata with the provided one.
-    fn with_metadata(&self, metadata: HashMap<String, String>) -> Result<RecordBatch>;
+    fn with_metadata(&self, metadata: impl Into<arrow_schema::Metadata>) -> Result<RecordBatch>;
 
     /// Take selected rows from the [RecordBatch].
     fn take(&self, indices: &UInt32Array) -> Result<RecordBatch>;
@@ -787,13 +787,13 @@ impl RecordBatchExt for RecordBatch {
         self.try_new_from_struct_array(project(&struct_array, schema.fields())?)
     }
 
-    fn metadata(&self) -> &HashMap<String, String> {
+    fn metadata(&self) -> &arrow_schema::Metadata {
         self.schema_ref().metadata()
     }
 
-    fn with_metadata(&self, metadata: HashMap<String, String>) -> Result<RecordBatch> {
+    fn with_metadata(&self, metadata: impl Into<arrow_schema::Metadata>) -> Result<RecordBatch> {
         let mut schema = self.schema_ref().as_ref().clone();
-        schema.metadata = metadata;
+        schema.metadata = metadata.into();
         Self::try_new(schema.into(), self.columns().into())
     }
 

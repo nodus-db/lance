@@ -650,7 +650,7 @@ async fn build_and_write_hnsw(
     mut writer: V1FileWriter<ManifestDescribing>,
 ) -> Result<usize> {
     let batch = params.build(vectors, distance_type).await?.to_batch()?;
-    let metadata = batch.schema_ref().metadata().clone();
+    let metadata: std::collections::HashMap<String, String> = batch.schema_ref().metadata().into();
     writer.write(&[batch]).await?;
     Ok(writer.finish_with_metadata(&metadata).await?.num_rows as usize)
 }

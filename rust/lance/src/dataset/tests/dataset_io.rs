@@ -1282,7 +1282,7 @@ async fn test_create_and_fill_empty_dataset(
         schema
             .as_ref()
             .clone()
-            .with_metadata([("key".to_string(), "value".to_string())].into()),
+            .with_metadata([("key".to_string(), "value".to_string())]),
     );
     let batches = vec![
         RecordBatch::try_new(
@@ -4176,10 +4176,9 @@ async fn test_bfloat16_roundtrip(
     let inner_field = Arc::new(
         ArrowField::new("item", DataType::FixedSizeBinary(2), true).with_metadata(
             [
-                (ARROW_EXT_NAME_KEY.into(), BFLOAT16_EXT_NAME.into()),
-                (ARROW_EXT_META_KEY.into(), "".into()),
-            ]
-            .into(),
+                (ARROW_EXT_NAME_KEY.to_string(), BFLOAT16_EXT_NAME.to_string()),
+                (ARROW_EXT_META_KEY.to_string(), "".to_string()),
+            ],
         ),
     );
     let schema = Arc::new(ArrowSchema::new(vec![ArrowField::new(

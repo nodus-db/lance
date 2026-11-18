@@ -55,7 +55,7 @@ use lance_arrow::*;
 use lance_core::deepsize::DeepSizeOf;
 use lance_core::utils::row_addr_remap::RowAddrRemap;
 use lance_core::{
-    Error, ROW_ID_FIELD, Result,
+    Error, ROW_ID_FIELD, Result, box_error,
     cache::{CacheKeySchema, KeyBuilder, LanceCache, UnsizedCacheKey, WeakLanceCache},
     traits::DatasetTakeRows,
     utils::parse::parse_env_as_bool,
@@ -703,11 +703,14 @@ pub(crate) async fn validate_committed_vector_segments(
                         vector_segment_contract(dataset, segment)
                             .await
                             .map_err(|error| {
-                                Error::io(format!(
-                                    "CreateIndex: cannot read vector segment {} to check that \
-                                     index '{}' keeps one metric and index type: {error}",
-                                    segment.uuid, segment.name
-                                ))
+                                Error::io_context(
+                                    format!(
+                                        "CreateIndex: cannot read vector segment {} to check \
+                                         that index '{}' keeps one metric and index type",
+                                        segment.uuid, segment.name
+                                    ),
+                                    box_error(error),
+                                )
                             })?;
                     Ok::<_, Error>((segment, contract))
                 }

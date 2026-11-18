@@ -127,6 +127,27 @@ impl std::error::Error for CommitStatusUnknownError {
     }
 }
 
+/// An I/O failure's context and its cause, kept as a chain: the message is
+/// `"{context}: {source}"`, and `source()` is the cause, so a caller can still
+/// downcast it (a typed refusal raised by a wrapped object store, say).
+#[derive(Debug)]
+struct IoContextError {
+    context: String,
+    source: BoxedError,
+}
+
+impl std::fmt::Display for IoContextError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.context, self.source)
+    }
+}
+
+impl std::error::Error for IoContextError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.source.as_ref())
+    }
+}
+
 /// Allocates error on the heap and then places `e` into it.
 #[inline]
 pub fn box_error(e: impl std::error::Error + Send + Sync + 'static) -> BoxedError {
@@ -617,6 +638,16 @@ impl Error {
     #[track_caller]
     pub fn io_source(source: BoxedError) -> Self {
         IOSnafu.into_error(source)
+    }
+
+    /// [`Error::io`] with a cause: the message is `"{context}: {source}"`, and
+    /// `source` stays on the error's `source()` chain.
+    #[track_caller]
+    pub fn io_context(context: impl Into<String>, source: BoxedError) -> Self {
+        Self::io_source(Box::new(IoContextError {
+            context: context.into(),
+            source,
+        }))
     }
 
     #[track_caller]
@@ -1471,6 +1502,28 @@ mod test {
         let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "missing");
         let converted: Error = io_err.into();
         assert!(matches!(converted, Error::IO { .. }));
+    }
+
+    #[test]
+    fn test_io_context_keeps_the_cause_on_the_source_chain() {
+        let error = Error::io_context(
+            "failed to read manifest m",
+            box_error(MyCustomError {
+                code: 7,
+                message: "refused".to_string(),
+            }),
+        );
+
+        assert!(matches!(error, Error::IO { .. }));
+        assert!(error.to_string().contains("failed to read manifest m: "));
+        let mut source: Option<&(dyn std::error::Error + 'static)> = Some(&error);
+        let found = std::iter::from_fn(|| {
+            let current = source?;
+            source = current.source();
+            Some(current)
+        })
+        .find_map(|e| e.downcast_ref::<MyCustomError>());
+        assert_eq!(found.map(|e| e.code), Some(7));
     }
 
     #[test]

@@ -875,10 +875,10 @@ impl Dataset {
             object_store::Error::NotFound { path, source } => {
                 Error::dataset_not_found(path, source)
             }
-            _ => Error::io(format!(
-                "failed to read manifest {}: {}",
-                manifest_location.path, err
-            )),
+            _ => Error::io_context(
+                format!("failed to read manifest {}", manifest_location.path),
+                box_error(err),
+            ),
         })?;
         if manifest_size < 16 {
             if manifest_location.size.is_some() {
@@ -907,10 +907,10 @@ impl Dataset {
                     object_store::Error::NotFound { path, source } => {
                         Error::dataset_not_found(path, source)
                     }
-                    _ => Error::io(format!(
-                        "failed to read manifest {}: {}",
-                        manifest_location.path, err
-                    )),
+                    _ => Error::io_context(
+                        format!("failed to read manifest {}", manifest_location.path),
+                        box_error(err),
+                    ),
                 })?;
 
         // A stale cached size yields a bogus footer offset. Detect it (the block

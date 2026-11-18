@@ -13,6 +13,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
+use lance_core::box_error;
 use lance_core::datatypes::{Field, Schema as LanceSchema};
 use lance_core::utils::deletion::DeletionVector;
 use lance_index::frag_reuse::{CompactFragReuseIndex, FragReuseVersion};
@@ -441,10 +442,13 @@ impl<'a, T: TableVersion> History<'a, T> {
             return Ok(None);
         }
         let table = self.table.checkout(version).await.map_err(|error| {
-            Error::io(format!(
-                "merge_existing_index_segments: cannot read dataset version {version} to \
-                 check merged index coverage: {error}"
-            ))
+            Error::io_context(
+                format!(
+                    "merge_existing_index_segments: cannot read dataset version {version} to \
+                     check merged index coverage"
+                ),
+                box_error(error),
+            )
         })?;
         let snapshot = Arc::new(Snapshot::new(table));
         self.snapshots.insert(version, snapshot.clone());
